@@ -9,6 +9,8 @@
 (define-constant ERR-ENERGY-CONSUMER-NOT-FOUND (err u104))
 (define-constant ERR-PARTICIPANT-ALREADY-REGISTERED (err u105))
 (define-constant ERR-INVALID-TRADE-STATUS (err u106))
+(define-constant ERR-INVALID-ENERGY-PRICE (err u107))
+(define-constant ERR-INVALID-PRODUCER-ADDRESS (err u108))
 
 ;; Data Maps
 (define-map energy-producers 
@@ -47,6 +49,7 @@
 (define-data-var platform-administrator principal tx-sender)
 (define-data-var minimum-tradeable-energy uint u100)
 (define-data-var platform-commission-rate uint u2)
+(define-data-var maximum-energy-price uint u1000000) ;; Set a reasonable maximum price
 
 ;; Read-only functions
 (define-read-only (get-energy-producer-details (producer-address principal))
@@ -90,6 +93,7 @@
 (define-public (register-energy-producer (initial-energy-price uint))
     (let ((producer-address tx-sender))
         (asserts! (is-none (map-get? energy-producers producer-address)) ERR-PARTICIPANT-ALREADY-REGISTERED)
+        (asserts! (and (> initial-energy-price u0) (<= initial-energy-price (var-get maximum-energy-price))) ERR-INVALID-ENERGY-PRICE)
         (ok (map-set energy-producers producer-address {
             cumulative-energy-produced: u0,
             producer-verification-status: false,
@@ -130,6 +134,7 @@
         (trade-identifier (+ (var-get energy-trade-sequence) u1))
         (total-transaction-price (* energy-amount (get energy-unit-price producer-details)))
     )
+    (asserts! (is-some (map-get? energy-producers producer-address)) ERR-INVALID-PRODUCER-ADDRESS)
     (asserts! (>= energy-amount (var-get minimum-tradeable-energy)) ERR-INVALID-ENERGY-AMOUNT)
     (try! (transfer-energy-credit-balance producer-address buyer-address energy-amount))
     (var-set energy-trade-sequence trade-identifier)
@@ -148,6 +153,7 @@
 (define-public (verify-energy-producer (producer-address principal))
     (let ((admin-address tx-sender))
         (asserts! (is-eq admin-address (var-get platform-administrator)) ERR-UNAUTHORIZED-ACCESS)
+        (asserts! (is-some (map-get? energy-producers producer-address)) ERR-ENERGY-PRODUCER-NOT-FOUND)
         (match (map-get? energy-producers producer-address)
             producer-details (ok (map-set energy-producers producer-address 
                 (merge producer-details {producer-verification-status: true})))
@@ -166,6 +172,7 @@
 (define-public (update-minimum-tradeable-energy (new-minimum-amount uint))
     (begin
         (asserts! (is-eq tx-sender (var-get platform-administrator)) ERR-UNAUTHORIZED-ACCESS)
+        (asserts! (> new-minimum-amount u0) ERR-INVALID-ENERGY-AMOUNT)
         (ok (var-set minimum-tradeable-energy new-minimum-amount))
     )
 )
@@ -175,4 +182,5 @@
     (var-set energy-trade-sequence u0)
     (var-set minimum-tradeable-energy u100)
     (var-set platform-commission-rate u2)
+    (var-set maximum-energy-price u1000000)
 )
